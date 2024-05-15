@@ -14,6 +14,7 @@ import com.exponea.data.Event
 import com.exponea.data.ExponeaConfigurationParser
 import com.exponea.data.OpenedPush
 import com.exponea.data.ReceivedPush
+import com.exponea.data.InAppMessageAction
 import com.exponea.data.RecommendationEncoder
 import com.exponea.data.RecommendationOptionsEncoder
 import com.exponea.exception.ExponeaException
@@ -23,6 +24,9 @@ import com.exponea.sdk.models.ExponeaConfiguration
 import com.exponea.sdk.models.FlushMode
 import com.exponea.sdk.models.FlushPeriod
 import com.exponea.sdk.models.PropertiesList
+import com.exponea.sdk.models.InAppMessage
+import com.exponea.sdk.models.InAppMessageButton
+import com.exponea.sdk.models.InAppMessageCallback
 import com.exponea.sdk.style.appinbox.StyledAppInboxProvider
 import com.exponea.sdk.util.Logger
 import com.exponea.style.AppInboxStyleParser
@@ -50,6 +54,7 @@ class ExponeaPlugin : FlutterPlugin, ActivityAware {
         private const val CHANNEL_NAME = "com.exponea"
         private const val STREAM_NAME_OPENED_PUSH = "$CHANNEL_NAME/opened_push"
         private const val STREAM_NAME_RECEIVED_PUSH = "$CHANNEL_NAME/received_push"
+        private const val STREAM_NAME_IN_APP_MESSAGES = "$CHANNEL_NAME/in_app_messages"
 
         fun handleCampaignIntent(intent: Intent?, applicationContext: Context) {
             Log.d(TAG, "handleCampaignIntent()")
@@ -92,6 +97,7 @@ class ExponeaPlugin : FlutterPlugin, ActivityAware {
     private var openedPushChannel: EventChannel? = null
     private var openedPushStreamHandler: OpenedPushStreamHandler? = null
     private var receivedPushChannel: EventChannel? = null
+    private var inAppMessagesChannel: EventChannel? = null
 
     override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         val context = binding.applicationContext
@@ -108,6 +114,10 @@ class ExponeaPlugin : FlutterPlugin, ActivityAware {
         }
         receivedPushChannel = EventChannel(binding.binaryMessenger, STREAM_NAME_RECEIVED_PUSH).apply {
             val handler = ReceivedPushStreamHandler()
+            setStreamHandler(handler)
+        }
+        inAppMessagesChannel = EventChannel(binding.binaryMessenger, STREAM_NAME_IN_APP_MESSAGES).apply {
+            val handler = InAppMessageActionStreamHandler.currentInstance
             setStreamHandler(handler)
         }
         binding
@@ -169,6 +179,7 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
         private const val METHOD_GET_LOG_LEVEL = "getLogLevel"
         private const val METHOD_SET_LOG_LEVEL = "setLogLevel"
         private const val METHOD_CHECK_PUSH_SETUP = "checkPushSetup"
+        private const val METHOD_REQUEST_PUSH_AUTHORIZATION = "requestPushAuthorization"
         private const val METHOD_SET_APP_INBOX_PROVIDER = "setAppInboxProvider"
         private const val METHOD_TRACK_APP_INBOX_OPENED = "trackAppInboxOpened"
         private const val METHOD_TRACK_APP_INBOX_OPENED_WITHOUT_TRACKING_CONSENT = "trackAppInboxOpenedWithoutTrackingConsent"
@@ -177,6 +188,7 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
         private const val METHOD_MARK_APP_INBOX_AS_READ = "markAppInboxAsRead"
         private const val METHOD_FETCH_APP_INBOX = "fetchAppInbox"
         private const val METHOD_FETCH_APP_INBOX_ITEM = "fetchAppInboxItem"
+        private const val METHOD_SET_IN_APP_MESSAGE_ACTION_HANDLER = "setInAppMessageActionHandler"
     }
 
     var activity: Context? = null
@@ -247,6 +259,9 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
             METHOD_CHECK_PUSH_SETUP -> {
                 checkPushSetup(result)
             }
+            METHOD_REQUEST_PUSH_AUTHORIZATION -> {
+                requestPushAuthorization(result)
+            }
             METHOD_SET_APP_INBOX_PROVIDER -> {
                 setAppInboxProvider(call.arguments, result)
             }
@@ -270,6 +285,9 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
             }
             METHOD_FETCH_APP_INBOX_ITEM -> {
                 fetchAppInboxItem(call.arguments, result)
+            }
+            METHOD_SET_IN_APP_MESSAGE_ACTION_HANDLER -> {
+                setInAppMessageActionHandler(call.arguments, result)
             }
             else -> {
                 result.notImplemented()
@@ -381,6 +399,14 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
         }
     }
 
+    private fun setInAppMessageActionHandler(args: Any?, result: Result) = runWithNoResult(result) {
+        requireConfigured()
+        val params = args as Map<String, Any?>
+
+        InAppMessageActionStreamHandler.currentInstance.overrideDefaultBehavior = params.getRequired("overrideDefaultBehavior")
+        InAppMessageActionStreamHandler.currentInstance.trackActions = params.getRequired("trackActions")
+    }
+
     private fun requireConfigured() {
         if (!Exponea.isInitialized) {
             throw ExponeaException.notConfigured()
@@ -430,6 +456,7 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
         Exponea.init(activity ?: context, configuration)
         this.configuration = configuration
         Exponea.notificationDataCallback = { ReceivedPushStreamHandler.handle(ReceivedPush(it)) }
+        Exponea.inAppMessageActionCallback = InAppMessageActionStreamHandler.currentInstance
         return@runWithResult true
     }
 
@@ -604,6 +631,12 @@ private class ExponeaMethodHandler(private val context: Context) : MethodCallHan
         Exponea.checkPushSetup = true
     }
 
+    private fun requestPushAuthorization(result: Result) = runAsync(result) {
+        Exponea.requestPushAuthorization(context) { granted ->
+            result.success(granted)
+        }
+    }
+
     private fun setAppInboxProvider(args: Any, result: Result) = runWithNoResult(result) {
         val configMap = args as Map<String, Any?>
         val appInboxStyle = AppInboxStyleParser(configMap).parse()
@@ -703,6 +736,62 @@ class ReceivedPushStreamHandler : StreamHandler {
             sink.success(push.toMap())
             return true
         }
+        return false
+    }
+}
+
+/**
+ * Handles listeners for in-app message actions.
+ */
+class InAppMessageActionStreamHandler private constructor(
+    override var overrideDefaultBehavior: Boolean = false,
+    override var trackActions: Boolean = true,
+) : StreamHandler, InAppMessageCallback {
+    companion object {
+        var currentInstance: InAppMessageActionStreamHandler = InAppMessageActionStreamHandler()
+            private set
+    }
+
+    // We have to hold inAppMessage until plugin is initialized and listener set
+    private var pendingData: InAppMessageAction? = null
+
+    private var eventSink: EventSink? = null
+
+    override fun onListen(arguments: Any?, eSink: EventSink?) {
+        eventSink = eSink
+        pendingData?.let {
+            if (handle(it)) {
+                pendingData = null
+            }
+        }
+    }
+
+    override fun onCancel(arguments: Any?) {
+        eventSink = null
+        overrideDefaultBehavior = false
+        trackActions = true
+    }
+
+    override fun inAppMessageAction(
+        message: InAppMessage,
+        button: InAppMessageButton?,
+        interaction: Boolean,
+        context: Context
+    ) {
+        handle(
+            InAppMessageAction(
+                message = message, button = button, interaction = interaction
+            )
+        )
+    }
+
+    private fun handle(action: InAppMessageAction): Boolean {
+        val sink = eventSink
+        if (sink != null) {
+            sink.success(action.toMap())
+            return true
+        }
+        pendingData = action
         return false
     }
 }

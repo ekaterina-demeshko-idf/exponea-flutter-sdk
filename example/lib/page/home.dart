@@ -30,11 +30,15 @@ class _HomePageState extends State<HomePage> {
   final _pushController = ValueNotifier<String>('- none -');
   late final StreamSubscription<OpenedPush> _openedPushSub;
   late final StreamSubscription<ReceivedPush> _receivedPushSub;
+  late final StreamSubscription<InAppMessageAction> _inAppMessageActionSub;
 
   @override
   void initState() {
     _openedPushSub = _plugin.openedPushStream.listen(_onPushEvent);
     _receivedPushSub = _plugin.receivedPushStream.listen(_onPushEvent);
+    _inAppMessageActionSub = _plugin
+        .inAppMessageActionStream()
+        .listen(_onInAppMessageActionEvent);
     super.initState();
   }
 
@@ -42,6 +46,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _openedPushSub.cancel();
     _receivedPushSub.cancel();
+    _inAppMessageActionSub.cancel();
     _flushPeriodController.dispose();
     _flushModeController.dispose();
     _pushController.dispose();
@@ -67,13 +72,12 @@ class _HomePageState extends State<HomePage> {
                     builder: (context, value, _) => Text(value),
                   ),
                 ),
-                if (Platform.isIOS)
-                  ListTile(
-                    title: ElevatedButton(
-                      onPressed: () => _requestIosPushAuthorization(context),
-                      child: const Text('Request Push Authorization'),
-                    ),
+                ListTile(
+                  title: ElevatedButton(
+                    onPressed: () => _requestPushAuthorization(context),
+                    child: const Text('Request Push Authorization'),
                   ),
+                ),
                 ListTile(
                   title: ElevatedButton(
                     onPressed: () => _checkIsConfigured(context),
@@ -486,9 +490,9 @@ class _HomePageState extends State<HomePage> {
         return await _plugin.setLogLevel(level);
       });
 
-  Future<void> _requestIosPushAuthorization(BuildContext context) =>
+  Future<void> _requestPushAuthorization(BuildContext context) =>
       _runAndShowResult(context, () async {
-        return await _plugin.requestIosPushAuthorization();
+        return await _plugin.requestPushAuthorization();
       });
 
   Future<void> _runAndShowResult(
@@ -516,4 +520,9 @@ class _HomePageState extends State<HomePage> {
   void _onPushEvent(dynamic push) {
     _pushController.value = '$push\nat: ${DateTime.now().toIso8601String()}';
   }
+
+  void _onInAppMessageActionEvent(InAppMessageAction action) {
+    print('received in-app action: $action');
+  }
+
 }

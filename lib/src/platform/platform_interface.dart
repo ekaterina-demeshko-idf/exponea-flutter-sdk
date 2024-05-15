@@ -100,6 +100,12 @@ abstract class ExponeaPlatform extends PlatformInterface
   }
 
   @override
+  Future<bool> requestPushAuthorization() async {
+    throw UnimplementedError();
+  }
+
+  @Deprecated("Will be removed in a later version of the SDK, use 'requestPushAuthorization()' instead")
+  @override
   Future<bool> requestIosPushAuthorization() async {
     throw UnimplementedError();
   }
@@ -184,4 +190,7 @@ abstract class ExponeaPlatform extends PlatformInterface
 
   @override
   Stream<ReceivedPush> get receivedPushStream => throw UnimplementedError();
+
+  @override
+  Stream<InAppMessageAction> inAppMessageActionStream({bool overrideDefaultBehavior = false, bool trackActions = true}) => throw UnimplementedError();
 }

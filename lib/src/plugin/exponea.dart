@@ -54,6 +54,11 @@ class ExponeaPlugin implements BaseInterface {
   Future<bool> isConfigured() => _platform.isConfigured();
 
   @override
+  Future<bool> requestPushAuthorization() =>
+      _platform.requestPushAuthorization();
+
+  @Deprecated("Will be removed in a later version of the SDK, use 'requestPushAuthorization()' instead")
+  @override
   Future<bool> requestIosPushAuthorization() =>
       _platform.requestIosPushAuthorization();
 
@@ -126,4 +131,8 @@ class ExponeaPlugin implements BaseInterface {
 
   @override
   Stream<ReceivedPush> get receivedPushStream => _platform.receivedPushStream;
+
+  @override
+  Stream<InAppMessageAction> inAppMessageActionStream({bool overrideDefaultBehavior = false, bool trackActions = true}) =>
+      _platform.inAppMessageActionStream(overrideDefaultBehavior: overrideDefaultBehavior, trackActions : trackActions);
 }

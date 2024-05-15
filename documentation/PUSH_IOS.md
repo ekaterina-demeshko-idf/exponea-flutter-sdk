@@ -66,9 +66,9 @@ To be able to send push notifications from Exponea backend, you need to connect 
 [Exponea web app push notification configuration](./APNS.md) guide contains screenshots showing where the data is located.
 
 ## 5. Authorizing for receiving push notifications
-You'll need a special permission for notifications visible to the user. To request it, call `ExponeaPlugin().requestIosPushAuthorization()` from **dart**.
+You'll need a special permission for notifications visible to the user. To request it, call `ExponeaPlugin().requestPushAuthorization()` from **dart**.
 ```dart 
-_plugin.requestIosPushAuthorization()
+_plugin.requestPushAuthorization()
 .then((accepted) => print("User has ${accepted ? 'accepted': 'rejected'} push notifications."))
 .catchError((error) => print('Error: $error'));
 ```
@@ -159,6 +159,21 @@ Messaging.messaging().token { token, error in
   }
 }
 ```
+
+### Show notification if app is in foreground
+
+```swift
+    override func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // show notification even if the app is in the foreground
+        if #available(iOS 14, *) {
+            completionHandler([.banner])
+        } else {
+            completionHandler([.alert])
+        }
+    }
+```
+
+This method is called by system if app is in foreground state. Default implementation is to show push notification. If you want to change the default behavior, override this method.
 
 #### Checklist:
  - push notification with image and buttons sent from Exponea web app should be properly displayed on your device. Push delivery tracking should work.
