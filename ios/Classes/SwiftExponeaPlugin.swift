@@ -177,9 +177,15 @@ public class FlutterInAppContentBlockPlaceholder: NSObject, FlutterPlatformView 
 }
 
 public class CustomInAppContentBlockCallback: InAppContentBlockCallbackType {
+    public func onActionClickedSafari(
+        placeholderId: String,
+        contentBlock: ExponeaSDK.InAppContentBlockResponse,
+        action: ExponeaSDK.InAppContentBlockAction
+    ) {
+        // TODO: 
+    }
     
     private let originalBehaviour: InAppContentBlockCallbackType
-    
     private let channel: FlutterMethodChannel
     private let methodOnInAppContentBlockHtmlChanged = "onInAppContentBlockHtmlChanged"
     
